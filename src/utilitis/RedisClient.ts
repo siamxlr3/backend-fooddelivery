@@ -9,7 +9,7 @@ export const client=redis.createClient({
     password: "jmjPL7pNzP1R7t1vgFRB2XK1dnWrhbID"
 });
 
-client.on("error", (err:Error) => console.error("❌ Redis Error:", err));
+client.on("error", (err:Error) => console.error(" Redis Error:", err));
 
 (async () => {
     await client.connect();
