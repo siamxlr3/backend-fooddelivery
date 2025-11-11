@@ -1,0 +1,82 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  Admin
+  User
+}
+
+enum Status {
+  Pending
+  Cancelled
+  Success
+}
+
+model food {
+  id          Int      @id @default(autoincrement())
+  name        String
+  description String
+  price       Decimal
+  image       String
+  category    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  cart        cart[]
+
+  @@map("Food")
+}
+
+model cart {
+  id         Int      @id @default(autoincrement())
+  userID     Int
+  user       user     @relation(fields: [userID], references: [id])
+  foodID     Int
+  food       food     @relation(fields: [foodID], references: [id])
+  quantity   Int
+  totalPrice Float
+  status     Status   @default(Pending)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("cart")
+}
+
+model payment {
+  id        Int      @id @default(autoincrement())
+  userID    Int
+  user      user     @relation(fields: [userID], references: [id])
+  item      String
+  amount    Decimal
+  address   String
+  status    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model user {
+  id        Int       @id @default(autoincrement())
+  name      String
+  email     String    @unique
+  password  String
+  role      Role      @default(User)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  cart      cart[]
+  payment   payment[]
+}
+
+model otp {
+  id        Int      @id @default(autoincrement())
+  email     String
+  otp       Decimal
+  status    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
