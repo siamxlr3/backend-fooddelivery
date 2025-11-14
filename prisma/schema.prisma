@@ -19,16 +19,30 @@ enum Status {
   Success
 }
 
+model foodcategory {
+  id     Int     @id @default(autoincrement())
+  name   String
+  image  String
+  status Boolean
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  food      food[]
+
+  @@map("foodcategory")
+}
+
 model food {
-  id          Int      @id @default(autoincrement())
-  name        String
-  description String
-  price       Decimal
-  image       String
-  category    String
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  cart        cart[]
+  id           Int          @id @default(autoincrement())
+  name         String
+  description  String
+  price        Decimal
+  image        String
+  categoryID   Int
+  foodcategory foodcategory @relation(fields: [categoryID], references: [id])
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  cart         cart[]
 
   @@map("Food")
 }

@@ -14,7 +14,7 @@ declare global {
 
 export const createFood=async (req:Request, res:Response) => {
     try {
-        const {name,description,price,category }=req.body;
+        const {name,description,price,categoryID }=req.body;
         let imageURL=""
         if(req.file){
             const result=await cloudinary.uploader.upload(req.file.path,{
@@ -27,7 +27,7 @@ export const createFood=async (req:Request, res:Response) => {
                 name,
                 description,
                 price,
-                category,
+                categoryID,
                 image:imageURL
             }
         })
@@ -84,7 +84,7 @@ export const getOne = async (req: Request, res: Response) => {
 export const update = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
-        const { name,description,price,category } = req.body;
+        const { name,description,price,categoryID } = req.body;
         let imageURL=""
 
         if(req.file){
@@ -96,7 +96,7 @@ export const update = async (req: Request, res: Response) => {
 
         await prisma.food.update({
             where: { id },
-            data: { name,description,price,category, image:imageURL },
+            data: { name,description,price,categoryID, image:imageURL },
         });
 
         await client.del("allFood")
