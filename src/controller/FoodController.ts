@@ -22,12 +22,16 @@ export const createFood=async (req:Request, res:Response) => {
             })
             imageURL=result.secure_url
         }
+
+        const numericCategoryID = parseInt(categoryID);
+        const numericPrice = parseFloat(price);
+
         await prisma.food.create({
             data:{
                 name,
                 description,
-                price,
-                categoryID,
+                price:numericPrice,
+                categoryID:numericCategoryID,
                 image:imageURL
             }
         })

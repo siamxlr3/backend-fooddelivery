@@ -16,16 +16,12 @@ export const createCategory = async (req: Request, res: Response) => {
         const { name, status } = req.body;
 
         let imageURL = "";
-
-        // 🔹 Upload image to cloudinary if exists
         if (req.file) {
             const result = await cloudinary.uploader.upload(req.file.path, {
                 folder: "categoryImage"
             });
             imageURL = result.secure_url;
         }
-
-        // 🔹 Create category
         await prisma.foodcategory.create({
             data: {
                 name,
@@ -34,7 +30,7 @@ export const createCategory = async (req: Request, res: Response) => {
             }
         });
 
-        // 🔹 Clear Redis Cache
+
         await client.del("allCategory");
 
         res.status(201).json({ message: "Category created successfully." });
