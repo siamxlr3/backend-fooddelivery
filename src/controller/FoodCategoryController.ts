@@ -175,7 +175,7 @@ export const getFoodCountByCategory = async (req: Request, res: Response) => {
     try {
         const categoryId = Number(req.params.id);
 
-        const count = await prisma.food.count({
+        const count = await prisma.food.findMany({
             where: { categoryID: categoryId },
         });
 
