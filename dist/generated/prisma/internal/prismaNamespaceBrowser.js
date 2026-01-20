@@ -50,8 +50,10 @@ export const ModelName = {
     Customer: 'Customer',
     Session: 'Session',
     DiningTable: 'DiningTable',
+    Booking: 'Booking',
     Setting: 'Setting',
-    Cart: 'Cart'
+    Cart: 'Cart',
+    Supplier: 'Supplier'
 };
 /*
  * Enums
@@ -68,6 +70,7 @@ export const UserScalarFieldEnum = {
     email: 'email',
     password: 'password',
     role: 'role',
+    salary: 'salary',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
@@ -178,6 +181,17 @@ export const DiningTableScalarFieldEnum = {
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
+export const BookingScalarFieldEnum = {
+    id: 'id',
+    customerName: 'customerName',
+    phone: 'phone',
+    guests: 'guests',
+    bookingTime: 'bookingTime',
+    tableId: 'tableId',
+    status: 'status',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
 export const SettingScalarFieldEnum = {
     id: 'id',
     key: 'key',
@@ -190,6 +204,20 @@ export const CartScalarFieldEnum = {
     quantity: 'quantity',
     totalPrice: 'totalPrice',
     status: 'status',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+export const SupplierScalarFieldEnum = {
+    id: 'id',
+    name: 'name',
+    phone: 'phone',
+    email: 'email',
+    address: 'address',
+    itemType: 'itemType',
+    status: 'status',
+    purchaseDate: 'purchaseDate',
+    totalPurchaseAmount: 'totalPurchaseAmount',
+    paymentStatus: 'paymentStatus',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };

@@ -1,4 +1,4 @@
-import { prisma } from "../prisma.js";
+import { query } from "../config/db.js";
 import cloudinary from "../utilitis/Cloudinary.js";
 import { client } from "../utilitis/RedisClient.js";
 export const createCategory = async (req, res) => {
@@ -12,13 +12,7 @@ export const createCategory = async (req, res) => {
             });
             imageURL = result.secure_url;
         }
-        await prisma.foodCategory.create({
-            data: {
-                name,
-                status: boolStatus,
-                image: imageURL
-            }
-        });
+        await query('INSERT INTO foodcategory (name, status, image, "updatedAt") VALUES ($1, $2, $3, NOW())', [name, boolStatus, imageURL]);
         if (client.isOpen) {
             const keys = await client.keys("allCategory*");
             if (keys.length > 0)
@@ -37,12 +31,19 @@ export const getAll = async (req, res) => {
         const pageNum = Number(page);
         const takeNum = Number(take);
         const skip = (pageNum - 1) * takeNum;
-        const where = keyword ? {
-            name: {
-                contains: keyword,
-                mode: "insensitive"
-            }
-        } : {};
+        let sql = 'SELECT * FROM foodcategory';
+        let countSql = 'SELECT COUNT(*) FROM foodcategory';
+        const params = [];
+        const whereClauses = [];
+        if (keyword) {
+            params.push(`%${keyword}%`);
+            whereClauses.push(`name ILIKE $${params.length}`);
+        }
+        if (whereClauses.length > 0) {
+            const clause = ' WHERE ' + whereClauses.join(' AND ');
+            sql += clause;
+            countSql += clause;
+        }
         // Unique cache key for pagination (only if no search keyword)
         const cacheKey = keyword ? null : `allCategory_p${pageNum}_t${takeNum}`;
         if (cacheKey && client.isOpen) {
@@ -51,13 +52,12 @@ export const getAll = async (req, res) => {
                 return res.status(200).json(JSON.parse(cached));
             }
         }
-        const count = await prisma.foodCategory.count({ where });
-        const data = await prisma.foodCategory.findMany({
-            where,
-            skip: skip,
-            take: takeNum,
-            orderBy: { id: 'desc' }
-        });
+        const countResult = await query(countSql, params);
+        const count = parseInt(countResult.rows[0].count);
+        sql += ` ORDER BY id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        params.push(takeNum, skip);
+        const result = await query(sql, params);
+        const data = result.rows;
         if (!data) {
             return res.status(404).send({ message: "Not Found" });
         }
@@ -92,12 +92,13 @@ export const getOneCategory = async (req, res) => {
                 });
             }
         }
-        const data = await prisma.foodCategory.findFirst({
-            where: { id },
-            include: { foods: true }
-        });
+        const result = await query('SELECT * FROM foodcategory WHERE id = $1 LIMIT 1', [id]);
+        const data = result.rows[0];
         if (!data)
             return res.status(404).json({ message: "Category not found" });
+        // Include foods relation
+        const foodsResult = await query('SELECT * FROM "Food" WHERE "categoryId" = $1', [id]);
+        data.foods = foodsResult.rows;
         if (client.isOpen) {
             await client.setEx(`singleCategory:${id}`, 600, JSON.stringify(data));
         }
@@ -120,14 +121,15 @@ export const updateCategory = async (req, res) => {
             });
             imageURL = result.secure_url;
         }
-        await prisma.foodCategory.update({
-            where: { id },
-            data: {
-                name,
-                status: boolStatus,
-                ...(imageURL && { image: imageURL })
-            }
-        });
+        let sql = 'UPDATE foodcategory SET name = $1, status = $2, "updatedAt" = NOW()';
+        const params = [name, boolStatus];
+        if (imageURL) {
+            params.push(imageURL);
+            sql += `, image = $${params.length}`;
+        }
+        sql += ` WHERE id = $${params.length + 1}`;
+        params.push(id);
+        await query(sql, params);
         if (client.isOpen) {
             const keys = await client.keys("allCategory*");
             if (keys.length > 0)
@@ -144,7 +146,8 @@ export const updateCategory = async (req, res) => {
 export const deleteCategory = async (req, res) => {
     try {
         const id = parseInt(req.params.id);
-        const data = await prisma.foodCategory.delete({ where: { id } });
+        const result = await query('DELETE FROM foodcategory WHERE id = $1 RETURNING *', [id]);
+        const data = result.rows[0];
         if (!data)
             return res.status(404).json({ message: "Not found" });
         if (client.isOpen) {
@@ -163,15 +166,8 @@ export const deleteCategory = async (req, res) => {
 export const searchCategory = async (req, res) => {
     try {
         const keyword = req.query.keyword;
-        const data = await prisma.foodCategory.findMany({
-            where: {
-                name: {
-                    contains: keyword,
-                    mode: "insensitive"
-                }
-            }
-        });
-        res.status(200).json({ message: "Category search successful", data });
+        const result = await query('SELECT * FROM foodcategory WHERE name ILIKE $1', [`%${keyword}%`]);
+        res.status(200).json({ message: "Category search successful", data: result.rows });
     }
     catch (err) {
         res.status(500).json({ message: "Something went wrong" });
@@ -180,12 +176,10 @@ export const searchCategory = async (req, res) => {
 export const getFoodCountByCategory = async (req, res) => {
     try {
         const categoryId = Number(req.params.id);
-        const count = await prisma.food.findMany({
-            where: { categoryId: categoryId },
-        });
+        const result = await query('SELECT * FROM "Food" WHERE "categoryId" = $1', [categoryId]);
         return res.json({
             categoryID: categoryId,
-            totalFoods: count,
+            totalFoods: result.rows,
         });
     }
     catch (error) {

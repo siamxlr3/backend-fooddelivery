@@ -29,9 +29,23 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
+const allowedOrigins = [
+    "https://frontend-fooddelivery.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    process.env.FRONTEND_URL
+].filter(Boolean);
+
 // 1. CORS Configuration
 app.use(cors({
-    origin: "https://frontend-fooddelivery.vercel.app",
+    origin: function (origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
@@ -39,7 +53,12 @@ app.use(cors({
 
 // 2. Explicit Preflight Handling
 app.options("(.*)", (req, res) => {
-    res.header("Access-Control-Allow-Origin", "https://frontend-fooddelivery.vercel.app");
+    const origin = req.header('Origin');
+    if (origin && allowedOrigins.includes(origin)) {
+        res.header("Access-Control-Allow-Origin", origin);
+    } else {
+        res.header("Access-Control-Allow-Origin", "https://frontend-fooddelivery.vercel.app");
+    }
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");

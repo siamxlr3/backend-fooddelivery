@@ -1,4 +1,4 @@
-import { prisma } from "../prisma.js";
+import { query } from "../config/db.js";
 import cloudinary from "../utilitis/Cloudinary.js";
 import { client } from "../utilitis/RedisClient.js";
 import { io } from "../socket.js";
@@ -16,17 +16,7 @@ export const createFood = async (req, res) => {
             });
             imageURL = result.secure_url;
         }
-        await prisma.food.create({
-            data: {
-                name,
-                description,
-                price: numericPrice,
-                discountPercentage: numericDiscount,
-                categoryId: numericCategoryID,
-                image: imageURL,
-                status: boolStatus
-            }
-        });
+        await query('INSERT INTO "Food" (name, description, price, "discountPercentage", "categoryId", image, status, "updatedAt") VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())', [name, description, numericPrice, numericDiscount, numericCategoryID, imageURL, boolStatus]);
         if (client.isOpen) {
             await client.del("allFood");
         }
@@ -44,14 +34,22 @@ export const getAll = async (req, res) => {
         const skip = (page - 1) * take;
         const categoryId = req.query.categoryId ? Number(req.query.categoryId) : undefined;
         const keyword = req.query.keyword;
-        const where = {};
-        if (categoryId)
-            where.categoryId = categoryId;
+        let sql = 'SELECT f.*, row_to_json(c.*) as category FROM "Food" f LEFT JOIN foodcategory c ON f."categoryId" = c.id';
+        let countSql = 'SELECT COUNT(*) FROM "Food" f';
+        const params = [];
+        const whereClauses = [];
+        if (categoryId) {
+            params.push(categoryId);
+            whereClauses.push(`f."categoryId" = $${params.length}`);
+        }
         if (keyword) {
-            where.name = {
-                contains: keyword,
-                mode: 'insensitive'
-            };
+            params.push(`%${keyword}%`);
+            whereClauses.push(`f.name ILIKE $${params.length}`);
+        }
+        if (whereClauses.length > 0) {
+            const clause = ' WHERE ' + whereClauses.join(' AND ');
+            sql += clause;
+            countSql += clause;
         }
         const cachedKey = `allFood:page:${page}:take:${take}:categoryId:${categoryId || 'all'}:keyword:${keyword || 'all'}`;
         if (client.isOpen) {
@@ -60,16 +58,12 @@ export const getAll = async (req, res) => {
                 return res.status(200).json({ message: "All food found", data: JSON.parse(cached) });
             }
         }
-        const count = await prisma.food.count({
-            where: where
-        });
-        const data = await prisma.food.findMany({
-            where: where,
-            skip: skip,
-            take: take,
-            orderBy: { createdAt: 'desc' },
-            include: { category: true }
-        });
+        const countResult = await query(countSql, params);
+        const count = parseInt(countResult.rows[0].count);
+        sql += ` ORDER BY f."createdAt" DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        params.push(take, skip);
+        const result = await query(sql, params);
+        const data = result.rows;
         if (!data) {
             return res.status(404).send({ message: "Not Found" });
         }
@@ -93,10 +87,8 @@ export const getOne = async (req, res) => {
                 return res.status(200).send({ message: "Food Found Successfully", data: JSON.parse(cached) });
             }
         }
-        const data = await prisma.food.findFirst({
-            where: { id },
-            include: { category: true }
-        });
+        const result = await query('SELECT f.*, row_to_json(c.*) as category FROM "Food" f LEFT JOIN foodcategory c ON f."categoryId" = c.id WHERE f.id = $1 LIMIT 1', [id]);
+        const data = result.rows[0];
         if (!data)
             return res.status(404).send({ message: "Food not found" });
         if (client.isOpen) {
@@ -124,18 +116,19 @@ export const update = async (req, res) => {
             });
             imageURL = result.secure_url;
         }
-        await prisma.food.update({
-            where: { id },
-            data: {
-                name,
-                description,
-                price: numericPrice,
-                categoryId: numericCategoryID,
-                status: boolStatus,
-                ...(numericDiscount !== undefined && { discountPercentage: numericDiscount }),
-                ...(imageURL && { image: imageURL })
-            },
-        });
+        let sql = 'UPDATE "Food" SET name = $1, description = $2, price = $3, "categoryId" = $4, status = $5, "updatedAt" = NOW()';
+        const params = [name, description, numericPrice, numericCategoryID, boolStatus];
+        if (numericDiscount !== undefined) {
+            params.push(numericDiscount);
+            sql += `, "discountPercentage" = $${params.length}`;
+        }
+        if (imageURL) {
+            params.push(imageURL);
+            sql += `, image = $${params.length}`;
+        }
+        sql += ` WHERE id = $${params.length + 1}`;
+        params.push(id);
+        await query(sql, params);
         if (client.isOpen) {
             await client.del("allFood");
             await client.del(`updated:${id}`);
@@ -150,7 +143,8 @@ export const update = async (req, res) => {
 export const remove = async (req, res) => {
     try {
         const id = parseInt(req.params.id);
-        const data = await prisma.food.delete({ where: { id } });
+        const result = await query('DELETE FROM "Food" WHERE id = $1 RETURNING *', [id]);
+        const data = result.rows[0];
         if (!data) {
             return res.status(404).send({ message: "Not Found" });
         }
@@ -168,15 +162,8 @@ export const remove = async (req, res) => {
 export const search = async (req, res) => {
     try {
         const keyword = req.query.keyword;
-        const data = await prisma.food.findMany({
-            where: {
-                name: {
-                    contains: keyword,
-                    mode: 'insensitive'
-                }
-            }
-        });
-        res.status(200).json({ message: "Food searching successfully", data });
+        const result = await query('SELECT * FROM "Food" WHERE name ILIKE $1', [`%${keyword}%`]);
+        res.status(200).json({ message: "Food searching successfully", data: result.rows });
     }
     catch (err) {
         res.status(500).send({ message: "Something went wrong" });
@@ -188,22 +175,17 @@ export const updateItemDiscounts = async (req, res) => {
         if (!Array.isArray(discounts)) {
             return res.status(400).json({ message: 'Discounts must be an array' });
         }
-        // Update all items
-        const updates = discounts.map(({ id, discountPercentage }) => {
-            return prisma.food.update({
-                where: { id: parseInt(id) },
-                data: { discountPercentage: parseFloat(discountPercentage) }
-            });
-        });
-        await Promise.all(updates);
+        // Update all items sequentially
+        for (const { id, discountPercentage } of discounts) {
+            await query('UPDATE "Food" SET "discountPercentage" = $1, "updatedAt" = NOW() WHERE id = $2', [parseFloat(discountPercentage), parseInt(id)]);
+        }
         // Clear cache
         if (client.isOpen) {
             await client.del('allFood');
         }
         // Fetch updated foods to broadcast
-        const updatedFoods = await prisma.food.findMany({
-            include: { category: true }
-        });
+        const result = await query('SELECT f.*, row_to_json(c.*) as category FROM "Food" f LEFT JOIN foodcategory c ON f."categoryId" = c.id');
+        const updatedFoods = result.rows;
         // Broadcast via Socket.IO
         io.emit('food_discounts_updated', updatedFoods);
         res.status(200).json({

@@ -1,22 +1,22 @@
-import { prisma } from "../prisma.js";
+import { query } from "../config/db.js";
 export const getInventory = async (req, res) => {
     try {
-        const items = await prisma.stockItem.findMany();
-        res.status(200).json(items);
+        const result = await query('SELECT * FROM "StockItem"');
+        res.status(200).json(result.rows);
     }
     catch (err) {
+        console.error("getInventory error:", err);
         res.status(500).json({ message: "Error fetching inventory" });
     }
 };
 export const createStockItem = async (req, res) => {
     try {
         const { name, quantity, unit, threshold } = req.body;
-        const newItem = await prisma.stockItem.create({
-            data: { name, quantity, unit, threshold }
-        });
-        res.status(201).json(newItem);
+        const result = await query('INSERT INTO "StockItem" (name, quantity, unit, threshold, "updatedAt") VALUES ($1, $2, $3, $4, NOW()) RETURNING *', [name, quantity, unit, threshold]);
+        res.status(201).json(result.rows[0]);
     }
     catch (err) {
+        console.error("createStockItem error:", err);
         res.status(500).json({ message: "Error creating stock item" });
     }
 };
@@ -24,13 +24,14 @@ export const updateStockItem = async (req, res) => {
     try {
         const { id } = req.params;
         const { quantity, threshold, unit } = req.body;
-        const updatedItem = await prisma.stockItem.update({
-            where: { id: Number(id) },
-            data: { quantity, threshold, unit }
-        });
-        res.status(200).json(updatedItem);
+        const result = await query('UPDATE "StockItem" SET quantity = $1, threshold = $2, unit = $3, "updatedAt" = NOW() WHERE id = $4 RETURNING *', [quantity, threshold, unit, Number(id)]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ message: "Stock item not found" });
+        }
+        res.status(200).json(result.rows[0]);
     }
     catch (err) {
+        console.error("updateStockItem error:", err);
         res.status(500).json({ message: "Error updating stock item" });
     }
 };
