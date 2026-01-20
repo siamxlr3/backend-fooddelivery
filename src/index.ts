@@ -38,7 +38,7 @@ app.use(cors({
 }));
 
 // 2. Explicit Preflight Handling
-app.options("*", (req, res) => {
+app.options("(.*)", (req, res) => {
     res.header("Access-Control-Allow-Origin", "https://frontend-fooddelivery-7cv3.vercel.app");
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
