@@ -1,7 +1,8 @@
-import {Request, Response} from "express";
-import {prisma} from "../prisma.js";
+import { Request, Response } from "express";
+import { prisma } from "../prisma.js";
 import cloudinary from "../utilitis/Cloudinary.js";
-import {client} from "../utilitis/RedisClient.js";
+import { client } from "../utilitis/RedisClient.js";
+import { io } from "../socket.js";
 
 
 declare global {
@@ -12,56 +13,95 @@ declare global {
     }
 }
 
-export const createFood=async (req:Request, res:Response) => {
+export const createFood = async (req: Request, res: Response) => {
     try {
-        const {name,description,price,categoryID }=req.body;
-        let imageURL=""
-        if(req.file){
-            const result=await cloudinary.uploader.upload(req.file.path,{
-                folder:"foodImage"
+        const { name, description, price, categoryId, status, discountPercentage } = req.body;
+        const boolStatus = status === 'true' || status === true;
+        const numericCategoryID = parseInt(categoryId);
+        const numericPrice = parseFloat(price);
+        const numericDiscount = discountPercentage ? parseFloat(discountPercentage) : 0;
+
+        let imageURL = ""
+        if (req.file) {
+            const result = await cloudinary.uploader.upload(req.file.path, {
+                folder: "foodImage"
             })
-            imageURL=result.secure_url
+            imageURL = result.secure_url
         }
 
-        const numericCategoryID = parseInt(categoryID);
-        const numericPrice = parseFloat(price);
-
         await prisma.food.create({
-            data:{
+            data: {
                 name,
                 description,
-                price:numericPrice,
-                categoryID:numericCategoryID,
-                image:imageURL
+                price: numericPrice,
+                discountPercentage: numericDiscount,
+                categoryId: numericCategoryID,
+                image: imageURL,
+                status: boolStatus
             }
         })
-        await client.del("allFood")
-        res.status(201).json({message:"Food created successfully."})
-    }catch(err){
-     res.status(500).json({message:"Something went wrong"})
+        if (client.isOpen) {
+            await client.del("allFood")
+        }
+        res.status(201).json({ message: "Food created successfully." })
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: "Something went wrong" })
     }
 }
 
 
-export const getAll=async (req:Request, res:Response) => {
+export const getAll = async (req: Request, res: Response) => {
     try {
-        const cached=await client.get('allFood');
-        if(cached){
-            return res.status(200).json({message:"All food find",data:JSON.parse(cached)});
-        }
-        const count=await prisma.food.count()
-        const data=await prisma.food.findMany({
-            skip:0,
-            take:req.query.take ? Number(req.query.take):10
-        })
-        if(!data){
-            return res.status(404).send({message:"Not Found"});
+        const take = req.query.take ? Number(req.query.take) : 10;
+        const page = req.query.page ? Number(req.query.page) : 1;
+        const skip = (page - 1) * take;
+        const categoryId = req.query.categoryId ? Number(req.query.categoryId) : undefined;
+        const keyword = req.query.keyword as string | undefined;
+
+        const where: any = {};
+        if (categoryId) where.categoryId = categoryId;
+        if (keyword) {
+            where.name = {
+                contains: keyword,
+                mode: 'insensitive'
+            };
         }
 
-        await client.setEx('allFood',600,JSON.stringify({data, count}))
-        res.status(201).json({message:"All food find",data:data})
-    }catch(err){
-        res.status(500).send({message:"Something went wrong"});
+        const cachedKey = `allFood:page:${page}:take:${take}:categoryId:${categoryId || 'all'}:keyword:${keyword || 'all'}`;
+
+        if (client.isOpen) {
+            const cached = await client.get(cachedKey);
+            if (cached) {
+                return res.status(200).json({ message: "All food found", data: JSON.parse(cached) });
+            }
+        }
+
+        const count = await prisma.food.count({
+            where: where
+        });
+
+        const data = await prisma.food.findMany({
+            where: where,
+            skip: skip,
+            take: take,
+            orderBy: { createdAt: 'desc' },
+            include: { category: true }
+        });
+
+        if (!data) {
+            return res.status(404).send({ message: "Not Found" });
+        }
+
+        const responseData = { data, total: count };
+
+        if (client.isOpen) {
+            await client.setEx(cachedKey, 600, JSON.stringify(responseData));
+        }
+        res.status(200).json({ message: "All food found", data: responseData });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Something went wrong" });
     }
 }
 
@@ -69,16 +109,23 @@ export const getOne = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
 
-        const cached=await client.get(`singleFood:${id}`)
-        if(cached){
-            return res.status(200).send({message:"Food Found Successfully ",data:cached})
+        if (client.isOpen) {
+            const cached = await client.get(`singleFood:${id}`)
+            if (cached) {
+                return res.status(200).send({ message: "Food Found Successfully", data: JSON.parse(cached) })
+            }
         }
-        const data = await prisma.food.findFirst({ where: { id } });
+        const data = await prisma.food.findFirst({
+            where: { id },
+            include: { category: true }
+        });
 
         if (!data) return res.status(404).send({ message: "Food not found" });
 
-        await client.setEx(`singleFood:${id}`,600,JSON.stringify(data))
-        res.status(201).json({message:"All food find",data:data})
+        if (client.isOpen) {
+            await client.setEx(`singleFood:${id}`, 600, JSON.stringify(data))
+        }
+        res.status(200).json({ message: "Food found successfully", data: data })
     } catch (err) {
         console.error(err);
         res.status(500).send({ message: "Something went wrong" });
@@ -88,41 +135,58 @@ export const getOne = async (req: Request, res: Response) => {
 export const update = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
-        const { name,description,price,categoryID } = req.body;
-        let imageURL=""
+        const { name, description, price, categoryId, status, discountPercentage } = req.body;
+        const boolStatus = status === 'true' || status === true;
+        const numericPrice = price ? parseFloat(price) : undefined;
+        const numericCategoryID = categoryId ? parseInt(categoryId) : undefined;
+        const numericDiscount = discountPercentage !== undefined ? parseFloat(discountPercentage) : undefined;
 
-        if(req.file){
-            const result=await cloudinary.uploader.upload(req.file.path,{
-                folder:"foodImage"
+        let imageURL = ""
+
+        if (req.file) {
+            const result = await cloudinary.uploader.upload(req.file.path, {
+                folder: "foodImage"
             })
-            imageURL=result.secure_url
+            imageURL = result.secure_url
         }
 
         await prisma.food.update({
             where: { id },
-            data: { name,description,price,categoryID, image:imageURL },
+            data: {
+                name,
+                description,
+                price: numericPrice,
+                categoryId: numericCategoryID,
+                status: boolStatus,
+                ...(numericDiscount !== undefined && { discountPercentage: numericDiscount }),
+                ...(imageURL && { image: imageURL })
+            },
         });
 
-        await client.del("allFood")
-        await client.del(`updated:${id}`)
+        if (client.isOpen) {
+            await client.del("allFood")
+            await client.del(`updated:${id}`)
+        }
 
-        res.status(200).send({ message: "Food updated successfully"});
+        res.status(200).send({ message: "Food updated successfully" });
     } catch (err) {
         console.error(err);
-        res.status(500).send({ message: "Something went wrong" });
+        res.status(500).json({ message: "Something went wrong" });
     }
 };
 
 export const remove = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
-        const data=await prisma.food.delete({ where: { id } });
+        const data = await prisma.food.delete({ where: { id } });
 
-        if(!data){
-            return res.status(404).send({message:"Not Found"});
+        if (!data) {
+            return res.status(404).send({ message: "Not Found" });
         }
-        await client.del("allFood")
-        await client.del(`data:${id}`)
+        if (client.isOpen) {
+            await client.del("allFood")
+            await client.del(`data:${id}`)
+        }
         res.status(200).send({ message: "Food deleted successfully" });
     } catch (err) {
         console.error(err);
@@ -133,17 +197,58 @@ export const remove = async (req: Request, res: Response) => {
 
 export const search = async (req: Request, res: Response) => {
     try {
-        const keyword=req.query.keyword as string;
-        const data=await prisma.food.findMany({
-            where:{
-                name:{
+        const keyword = req.query.keyword as string;
+        const data = await prisma.food.findMany({
+            where: {
+                name: {
                     contains: keyword,
                     mode: 'insensitive'
                 }
             }
         })
-        res.status(200).json({message:"Food searching successfully",data});
-    }catch(err){
+        res.status(200).json({ message: "Food searching successfully", data });
+    } catch (err) {
         res.status(500).send({ message: "Something went wrong" });
     }
 }
+
+export const updateItemDiscounts = async (req: Request, res: Response) => {
+    try {
+        const { discounts } = req.body; // Array of { id: number, discountPercentage: number }
+
+        if (!Array.isArray(discounts)) {
+            return res.status(400).json({ message: 'Discounts must be an array' });
+        }
+
+        // Update all items
+        const updates = discounts.map(({ id, discountPercentage }) => {
+            return prisma.food.update({
+                where: { id: parseInt(id) },
+                data: { discountPercentage: parseFloat(discountPercentage) }
+            });
+        });
+
+        await Promise.all(updates);
+
+        // Clear cache
+        if (client.isOpen) {
+            await client.del('allFood');
+        }
+
+        // Fetch updated foods to broadcast
+        const updatedFoods = await prisma.food.findMany({
+            include: { category: true }
+        });
+
+        // Broadcast via Socket.IO
+        io.emit('food_discounts_updated', updatedFoods);
+
+        res.status(200).json({
+            message: 'Item discounts updated successfully',
+            data: updatedFoods
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Failed to update item discounts' });
+    }
+};

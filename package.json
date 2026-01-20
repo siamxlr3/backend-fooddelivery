@@ -23,6 +23,7 @@
         "nodemailer": "^7.0.10",
         "prisma": "^6.18.0",
         "redis": "^5.9.0",
+        "socket.io": "^4.8.3",
         "stripe": "^19.2.0"
     },
     "devDependencies": {
@@ -35,6 +36,7 @@
         "@types/node": "^24.10.0",
         "@types/nodemailer": "^7.0.3",
         "@types/redis": "^4.0.10",
+        "@types/socket.io": "^3.0.1",
         "@types/stripe": "^8.0.416",
         "nodemon": "^3.1.10",
         "ts-node": "^10.9.2",

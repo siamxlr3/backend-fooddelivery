@@ -14,6 +14,7 @@ declare global {
 export const createCategory = async (req: Request, res: Response) => {
     try {
         const { name, status } = req.body;
+        const boolStatus = status === 'true' || status === true;
 
         let imageURL = "";
         if (req.file) {
@@ -22,16 +23,18 @@ export const createCategory = async (req: Request, res: Response) => {
             });
             imageURL = result.secure_url;
         }
-        await prisma.foodcategory.create({
+        await prisma.foodCategory.create({
             data: {
                 name,
-                status,
+                status: boolStatus,
                 image: imageURL
             }
         });
 
-
-        await client.del("allCategory");
+        if (client.isOpen) {
+            const keys = await client.keys("allCategory*");
+            if (keys.length > 0) await client.del(keys);
+        }
 
         res.status(201).json({ message: "Category created successfully." });
     } catch (err) {
@@ -42,25 +45,60 @@ export const createCategory = async (req: Request, res: Response) => {
 
 
 
-export const getAll=async (req:Request, res:Response) => {
+export const getAll = async (req: Request, res: Response) => {
     try {
-        const cached=await client.get('allFood');
-        if(cached){
-            return res.status(200).json({message:"All food find",data:JSON.parse(cached)});
-        }
-        const count=await prisma.foodcategory.count()
-        const data=await prisma.foodcategory.findMany({
-            skip:0,
-            take:req.query.take ? Number(req.query.take):10
-        })
-        if(!data){
-            return res.status(404).send({message:"Not Found"});
+        const { page = 1, take = 10, keyword = '' } = req.query;
+        const pageNum = Number(page);
+        const takeNum = Number(take);
+        const skip = (pageNum - 1) * takeNum;
+
+        const where: any = keyword ? {
+            name: {
+                contains: keyword as string,
+                mode: "insensitive"
+            }
+        } : {};
+
+        // Unique cache key for pagination (only if no search keyword)
+        const cacheKey = keyword ? null : `allCategory_p${pageNum}_t${takeNum}`;
+
+        if (cacheKey && client.isOpen) {
+            const cached = await client.get(cacheKey);
+            if (cached) {
+                return res.status(200).json(JSON.parse(cached));
+            }
         }
 
-        await client.setEx('allFood',600,JSON.stringify({data, count}))
-        res.status(201).json({message:"All food find",data:data})
-    }catch(err){
-        res.status(500).send({message:"Something went wrong"});
+        const count = await prisma.foodCategory.count({ where });
+        const data = await prisma.foodCategory.findMany({
+            where,
+            skip: skip,
+            take: takeNum,
+            orderBy: { id: 'desc' }
+        });
+
+        if (!data) {
+            return res.status(404).send({ message: "Not Found" });
+        }
+
+        const responseData = {
+            data: data,
+            total: count,
+            page: pageNum,
+            totalPages: Math.ceil(count / takeNum)
+        };
+
+        if (cacheKey && client.isOpen) {
+            await client.setEx(cacheKey, 600, JSON.stringify(responseData));
+        }
+
+        res.status(200).json({
+            message: "Categories found successfully",
+            data: responseData
+        });
+    } catch (err) {
+        console.error("Error in getAll categories:", err);
+        res.status(500).json({ message: "Something went wrong" });
     }
 }
 
@@ -70,22 +108,26 @@ export const getOneCategory = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
 
-        const cached = await client.get(`singleCategory:${id}`);
-        if (cached) {
-            return res.status(200).json({
-                message: "Category found successfully",
-                data: JSON.parse(cached),
-            });
+        if (client.isOpen) {
+            const cached = await client.get(`singleCategory:${id}`);
+            if (cached) {
+                return res.status(200).json({
+                    message: "Category found successfully",
+                    data: JSON.parse(cached),
+                });
+            }
         }
 
-        const data = await prisma.foodcategory.findFirst({
+        const data = await prisma.foodCategory.findFirst({
             where: { id },
-            include: { food: true }
+            include: { foods: true }
         });
 
         if (!data) return res.status(404).json({ message: "Category not found" });
 
-        await client.setEx(`singleCategory:${id}`, 600, JSON.stringify(data));
+        if (client.isOpen) {
+            await client.setEx(`singleCategory:${id}`, 600, JSON.stringify(data));
+        }
 
         res.status(200).json({ message: "Category found", data });
     } catch (err) {
@@ -100,6 +142,7 @@ export const updateCategory = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
         const { name, status } = req.body;
+        const boolStatus = status === 'true' || status === true;
 
         let imageURL = "";
 
@@ -110,17 +153,20 @@ export const updateCategory = async (req: Request, res: Response) => {
             imageURL = result.secure_url;
         }
 
-        await prisma.foodcategory.update({
+        await prisma.foodCategory.update({
             where: { id },
             data: {
                 name,
-                status,
+                status: boolStatus,
                 ...(imageURL && { image: imageURL })
             }
         });
 
-        await client.del("allCategory");
-        await client.del(`singleCategory:${id}`);
+        if (client.isOpen) {
+            const keys = await client.keys("allCategory*");
+            if (keys.length > 0) await client.del(keys);
+            await client.del(`singleCategory:${id}`);
+        }
 
         res.status(200).json({ message: "Category updated successfully" });
     } catch (err) {
@@ -135,12 +181,15 @@ export const deleteCategory = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
 
-        const data = await prisma.foodcategory.delete({ where: { id } });
+        const data = await prisma.foodCategory.delete({ where: { id } });
 
         if (!data) return res.status(404).json({ message: "Not found" });
 
-        await client.del("allCategory");
-        await client.del(`singleCategory:${id}`);
+        if (client.isOpen) {
+            const keys = await client.keys("allCategory*");
+            if (keys.length > 0) await client.del(keys);
+            await client.del(`singleCategory:${id}`);
+        }
 
         res.status(200).json({ message: "Category deleted successfully" });
     } catch (err) {
@@ -155,7 +204,7 @@ export const searchCategory = async (req: Request, res: Response) => {
     try {
         const keyword = req.query.keyword as string;
 
-        const data = await prisma.foodcategory.findMany({
+        const data = await prisma.foodCategory.findMany({
             where: {
                 name: {
                     contains: keyword,
@@ -176,7 +225,7 @@ export const getFoodCountByCategory = async (req: Request, res: Response) => {
         const categoryId = Number(req.params.id);
 
         const count = await prisma.food.findMany({
-            where: { categoryID: categoryId },
+            where: { categoryId: categoryId },
         });
 
         return res.json({
@@ -184,7 +233,7 @@ export const getFoodCountByCategory = async (req: Request, res: Response) => {
             totalFoods: count,
         });
     } catch (error) {
-        return res.status(500).json({ message:"Something went wrong" });
+        return res.status(500).json({ message: "Something went wrong" });
     }
 };
 

@@ -1,0 +1,13 @@
+import express from "express";
+import { VerifyToken } from "../middleware/VerifyToken.js";
+import { CheckRole } from "../middleware/CheckRole.js";
+import { getTables, addTable, removeTable, updateTable } from "../controller/TableController.js";
+
+const router = express.Router();
+
+router.get("/", VerifyToken, getTables);
+router.post("/", VerifyToken, CheckRole(['Admin', 'Cashier']), addTable);
+router.put("/:id", VerifyToken, CheckRole(['Admin', 'Cashier']), updateTable);
+router.delete("/:id", VerifyToken, CheckRole(['Admin', 'Cashier']), removeTable);
+
+export default router;
