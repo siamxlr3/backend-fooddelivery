@@ -29,7 +29,7 @@ initSocket(httpServer);
 
 app.use(express.json());
 app.use(cors({
-    origin: ["http://localhost:3000", "https://frontend-fooddelivery-7cv3.vercel.app/"],
+    origin: ["http://localhost:3000", "https://frontend-fooddelivery-7cv3.vercel.app"],
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "Cookie"]
