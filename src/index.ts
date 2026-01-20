@@ -28,15 +28,21 @@ const httpServer = createServer(app);
 initSocket(httpServer);
 
 app.use(express.json());
+
 app.use(cors({
-    origin: [
-        "http://localhost:3000",
-        "https://frontend-fooddelivery-7cv3.vercel.app"
-    ],
+    origin: "https://frontend-fooddelivery-7cv3.vercel.app",
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"]
 }));
+
+app.options("*", (req, res) => {
+    res.header("Access-Control-Allow-Origin", "https://frontend-fooddelivery-7cv3.vercel.app");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    return res.sendStatus(200);
+});
+
+app.use(cookieParser());
 import path from "path";
 import { fileURLToPath } from "url";
 
