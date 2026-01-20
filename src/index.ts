@@ -31,7 +31,7 @@ const httpServer = createServer(app);
 
 // 1. CORS Configuration
 app.use(cors({
-    origin: "https://frontend-fooddelivery-7cv3.vercel.app",
+    origin: "https://frontend-fooddelivery.vercel.app",
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
@@ -39,7 +39,7 @@ app.use(cors({
 
 // 2. Explicit Preflight Handling
 app.options("(.*)", (req, res) => {
-    res.header("Access-Control-Allow-Origin", "https://frontend-fooddelivery-7cv3.vercel.app");
+    res.header("Access-Control-Allow-Origin", "https://frontend-fooddelivery.vercel.app");
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
