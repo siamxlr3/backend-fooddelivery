@@ -30,9 +30,9 @@ export const Register = async (req: Request, res: Response) => {
         }
 
         res.status(200).send({ message: "User created" });
-    } catch (err) {
-        console.error("Register error:", err);
-        res.status(500).send({ message: "Something went wrong" });
+    } catch (err: any) {
+        console.error("Register error DETAILS:", err);
+        res.status(500).send({ message: "Register failed", error: err.message });
     }
 };
 
@@ -70,9 +70,9 @@ export const login = async (req: Request, res: Response) => {
         }
 
         res.status(200).send({ message: "OTP sent to your email" });
-    } catch (e) {
-        console.error("Login Error:", e);
-        res.status(500).send({ message: "Something went wrong" });
+    } catch (e: any) {
+        console.error("Login Error DETAILS:", e);
+        res.status(500).send({ message: "Login failed", error: e.message });
     }
 }
 
