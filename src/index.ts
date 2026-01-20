@@ -29,31 +29,22 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
-// 1. CORS Configuration - Must be at the top
-const allowedOrigins = [
-    "https://frontend-fooddelivery-7cv3.vercel.app",
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:3001"
-];
-
+// 1. CORS Configuration
 app.use(cors({
-    origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps/curl)
-        if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
-            callback(null, true);
-        } else {
-            callback(null, true); // Being permissive to solve the issue, but ideally restrict to allowedOrigins
-        }
-    },
+    origin: "https://frontend-fooddelivery-7cv3.vercel.app",
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "Accept"]
 }));
 
-// 2. Preflight handling
-app.options("*", cors());
+// 2. Explicit Preflight Handling
+app.options("*", (req, res) => {
+    res.header("Access-Control-Allow-Origin", "https://frontend-fooddelivery-7cv3.vercel.app");
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.sendStatus(200);
+});
 
 // Initialize Socket.io
 initSocket(httpServer);
@@ -83,4 +74,3 @@ httpServer.listen(Port, () => {
 });
 
 export default app;
-
