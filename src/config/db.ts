@@ -22,4 +22,18 @@ export const pool = new Pool({
     ssl: connectionString?.includes('localhost') ? false : { rejectUnauthorized: false }
 });
 
-export const query = (text: string, params?: any[]) => pool.query(text, params);
+export const query = async (text: string, params?: any[]) => {
+    try {
+        return await pool.query(text, params);
+    } catch (err: any) {
+        console.error("DATABASE QUERY ERROR DETAILS:", {
+            message: err.message,
+            code: err.code,
+            detail: err.detail,
+            hint: err.hint,
+            query: text,
+            params: params
+        });
+        throw err;
+    }
+};
