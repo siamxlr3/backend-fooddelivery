@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { prisma } from "../prisma.js";
+import { query } from "../config/db.js";
 import cloudinary from "../utilitis/Cloudinary.js";
 import { client } from "../utilitis/RedisClient.js";
 
@@ -23,13 +23,11 @@ export const createCategory = async (req: Request, res: Response) => {
             });
             imageURL = result.secure_url;
         }
-        await prisma.foodCategory.create({
-            data: {
-                name,
-                status: boolStatus,
-                image: imageURL
-            }
-        });
+
+        await query(
+            'INSERT INTO foodcategory (name, status, image, "updatedAt") VALUES ($1, $2, $3, NOW())',
+            [name, boolStatus, imageURL]
+        );
 
         if (client.isOpen) {
             const keys = await client.keys("allCategory*");
@@ -43,8 +41,6 @@ export const createCategory = async (req: Request, res: Response) => {
     }
 };
 
-
-
 export const getAll = async (req: Request, res: Response) => {
     try {
         const { page = 1, take = 10, keyword = '' } = req.query;
@@ -52,12 +48,21 @@ export const getAll = async (req: Request, res: Response) => {
         const takeNum = Number(take);
         const skip = (pageNum - 1) * takeNum;
 
-        const where: any = keyword ? {
-            name: {
-                contains: keyword as string,
-                mode: "insensitive"
-            }
-        } : {};
+        let sql = 'SELECT * FROM foodcategory';
+        let countSql = 'SELECT COUNT(*) FROM foodcategory';
+        const params: any[] = [];
+        const whereClauses: string[] = [];
+
+        if (keyword) {
+            params.push(`%${keyword}%`);
+            whereClauses.push(`name ILIKE $${params.length}`);
+        }
+
+        if (whereClauses.length > 0) {
+            const clause = ' WHERE ' + whereClauses.join(' AND ');
+            sql += clause;
+            countSql += clause;
+        }
 
         // Unique cache key for pagination (only if no search keyword)
         const cacheKey = keyword ? null : `allCategory_p${pageNum}_t${takeNum}`;
@@ -69,13 +74,14 @@ export const getAll = async (req: Request, res: Response) => {
             }
         }
 
-        const count = await prisma.foodCategory.count({ where });
-        const data = await prisma.foodCategory.findMany({
-            where,
-            skip: skip,
-            take: takeNum,
-            orderBy: { id: 'desc' }
-        });
+        const countResult = await query(countSql, params);
+        const count = parseInt(countResult.rows[0].count);
+
+        sql += ` ORDER BY id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        params.push(takeNum, skip);
+
+        const result = await query(sql, params);
+        const data = result.rows;
 
         if (!data) {
             return res.status(404).send({ message: "Not Found" });
@@ -102,8 +108,6 @@ export const getAll = async (req: Request, res: Response) => {
     }
 }
 
-
-
 export const getOneCategory = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
@@ -118,12 +122,14 @@ export const getOneCategory = async (req: Request, res: Response) => {
             }
         }
 
-        const data = await prisma.foodCategory.findFirst({
-            where: { id },
-            include: { foods: true }
-        });
+        const result = await query('SELECT * FROM foodcategory WHERE id = $1 LIMIT 1', [id]);
+        const data = result.rows[0];
 
         if (!data) return res.status(404).json({ message: "Category not found" });
+
+        // Include foods relation
+        const foodsResult = await query('SELECT * FROM "Food" WHERE "categoryId" = $1', [id]);
+        data.foods = foodsResult.rows;
 
         if (client.isOpen) {
             await client.setEx(`singleCategory:${id}`, 600, JSON.stringify(data));
@@ -136,8 +142,6 @@ export const getOneCategory = async (req: Request, res: Response) => {
     }
 };
 
-
-
 export const updateCategory = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
@@ -145,7 +149,6 @@ export const updateCategory = async (req: Request, res: Response) => {
         const boolStatus = status === 'true' || status === true;
 
         let imageURL = "";
-
         if (req.file) {
             const result = await cloudinary.uploader.upload(req.file.path, {
                 folder: "categoryImage"
@@ -153,14 +156,18 @@ export const updateCategory = async (req: Request, res: Response) => {
             imageURL = result.secure_url;
         }
 
-        await prisma.foodCategory.update({
-            where: { id },
-            data: {
-                name,
-                status: boolStatus,
-                ...(imageURL && { image: imageURL })
-            }
-        });
+        let sql = 'UPDATE foodcategory SET name = $1, status = $2, "updatedAt" = NOW()';
+        const params: any[] = [name, boolStatus];
+
+        if (imageURL) {
+            params.push(imageURL);
+            sql += `, image = $${params.length}`;
+        }
+
+        sql += ` WHERE id = $${params.length + 1}`;
+        params.push(id);
+
+        await query(sql, params);
 
         if (client.isOpen) {
             const keys = await client.keys("allCategory*");
@@ -175,13 +182,12 @@ export const updateCategory = async (req: Request, res: Response) => {
     }
 };
 
-
-
 export const deleteCategory = async (req: Request, res: Response) => {
     try {
         const id = parseInt(req.params.id);
 
-        const data = await prisma.foodCategory.delete({ where: { id } });
+        const result = await query('DELETE FROM foodcategory WHERE id = $1 RETURNING *', [id]);
+        const data = result.rows[0];
 
         if (!data) return res.status(404).json({ message: "Not found" });
 
@@ -198,42 +204,29 @@ export const deleteCategory = async (req: Request, res: Response) => {
     }
 };
 
-
-
 export const searchCategory = async (req: Request, res: Response) => {
     try {
         const keyword = req.query.keyword as string;
-
-        const data = await prisma.foodCategory.findMany({
-            where: {
-                name: {
-                    contains: keyword,
-                    mode: "insensitive"
-                }
-            }
-        });
-
-        res.status(200).json({ message: "Category search successful", data });
+        const result = await query(
+            'SELECT * FROM foodcategory WHERE name ILIKE $1',
+            [`%${keyword}%`]
+        );
+        res.status(200).json({ message: "Category search successful", data: result.rows });
     } catch (err) {
         res.status(500).json({ message: "Something went wrong" });
     }
 };
 
-
 export const getFoodCountByCategory = async (req: Request, res: Response) => {
     try {
         const categoryId = Number(req.params.id);
-
-        const count = await prisma.food.findMany({
-            where: { categoryId: categoryId },
-        });
+        const result = await query('SELECT * FROM "Food" WHERE "categoryId" = $1', [categoryId]);
 
         return res.json({
             categoryID: categoryId,
-            totalFoods: count,
+            totalFoods: result.rows,
         });
     } catch (error) {
         return res.status(500).json({ message: "Something went wrong" });
     }
 };
-

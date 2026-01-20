@@ -1,39 +1,36 @@
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { pool } from "./src/config/db.js";
 
 async function deleteBill() {
+    const client = await pool.connect();
     try {
         // Try to delete by invoice number first
-        const result = await prisma.bill.deleteMany({
-            where: {
-                invoiceNumber: '#9c4b7733'
-            }
-        });
+        const result = await client.query('DELETE FROM "Bill" WHERE "invoiceNumber" = $1 RETURNING *', ['#9c4b7733']);
 
-        if (result.count > 0) {
-            console.log(`✅ Successfully deleted ${result.count} bill(s) with invoice number #9c4b7733`);
+        if (result.rows.length > 0) {
+            console.log(`✅ Successfully deleted ${result.rows.length} bill(s) with invoice number #9c4b7733`);
         } else {
             console.log('❌ No bill found with invoice number #9c4b7733');
 
             // Try to find and delete by ID if it's a numeric ID
-            const billId = parseInt('#9c4b7733'.replace('#', ''), 16);
-            console.log(`Trying to delete by ID: ${billId}`);
+            const billIdStr = '#9c4b7733'.replace('#', '');
+            const billId = parseInt(billIdStr, 16);
 
-            const billById = await prisma.bill.delete({
-                where: { id: billId }
-            }).catch(() => null);
+            if (!isNaN(billId)) {
+                console.log(`Trying to delete by ID: ${billId}`);
+                const billByIdResult = await client.query('DELETE FROM "Bill" WHERE id = $1 RETURNING *', [billId]);
 
-            if (billById) {
-                console.log(`✅ Successfully deleted bill with ID ${billId}`);
-            } else {
-                console.log('❌ No bill found with that ID either');
+                if (billByIdResult.rows.length > 0) {
+                    console.log(`✅ Successfully deleted bill with ID ${billId}`);
+                } else {
+                    console.log('❌ No bill found with that ID either');
+                }
             }
         }
     } catch (error: any) {
         console.error('Error:', error.message);
     } finally {
-        await prisma.$disconnect();
+        client.release();
+        await pool.end();
     }
 }
 

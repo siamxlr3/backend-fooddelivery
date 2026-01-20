@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { prisma } from "../prisma.js";
+import { query } from "../config/db.js";
 import bcrypt from "bcrypt";
 import { GenerateToken } from "../middleware/GenerateToken.js";
 import { EmailSend } from "../utilitis/EmailHelper.js";
@@ -9,21 +9,17 @@ export const Register = async (req: Request, res: Response) => {
     try {
         const { name, email, password, role } = req.body;
 
-        const existingUser = await prisma.user.findFirst({ where: { email } });
-        if (existingUser) {
+        const existingUserResult = await query('SELECT * FROM "User" WHERE email = $1', [email]);
+        if (existingUserResult.rows.length > 0) {
             return res.status(400).send({ message: "User already exists" });
         }
 
         const hashPassword = await bcrypt.hash(password, 10);
 
-        await prisma.user.create({
-            data: {
-                name,
-                email,
-                password: hashPassword,
-                role,
-            },
-        });
+        await query(
+            'INSERT INTO "User" (name, email, password, role, "updatedAt") VALUES ($1, $2, $3, $4, NOW())',
+            [name, email, hashPassword, role || 'Cashier']
+        );
 
         try {
             if (client.isOpen) {
@@ -40,16 +36,17 @@ export const Register = async (req: Request, res: Response) => {
     }
 };
 
-
-
 export const login = async (req: Request, res: Response) => {
     try {
         const { email, password } = req.body;
-        const User = await prisma.user.findFirst({ where: { email: email } });
-        if (!User) {
+        const result = await query('SELECT * FROM "User" WHERE email = $1 LIMIT 1', [email]);
+        const user = result.rows[0];
+
+        if (!user) {
             return res.status(400).send({ message: "User does not exist" });
         }
-        const validPassword = await bcrypt.compare(password, User.password);
+
+        const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) {
             return res.status(400).send({ message: "Invalid password" });
         }
@@ -60,13 +57,10 @@ export const login = async (req: Request, res: Response) => {
 
         const otpCode = generateOTP();
 
-        await prisma.otp.create({
-            data: {
-                email,
-                otp: otpCode,
-                status: false
-            }
-        })
+        await query(
+            'INSERT INTO "Otp" (email, otp, status, "updatedAt") VALUES ($1, $2, $3, NOW())',
+            [email, otpCode, false]
+        );
 
         try {
             await EmailSend(email, `Your OTP is ${otpCode}`, "Login OTP")
@@ -82,23 +76,29 @@ export const login = async (req: Request, res: Response) => {
     }
 }
 
-
 export const verifyOTP = async (req: Request, res: Response) => {
     try {
         const email = req.params.email;
         const { otp } = req.body;
-        const record = await prisma.otp.findFirst({ where: { email, otp, status: false } })
+
+        const otpResult = await query(
+            'SELECT * FROM "Otp" WHERE email = $1 AND otp = $2 AND status = false LIMIT 1',
+            [email, otp]
+        );
+        const record = otpResult.rows[0];
 
         if (!record) {
             return res.status(400).send({ message: "Invalid Otp" });
         }
 
-        await prisma.otp.update({
-            where: { id: record.id },
-            data: { otp: "0", status: true },
-        })
+        await query(
+            'UPDATE "Otp" SET otp = $1, status = $2, "updatedAt" = NOW() WHERE id = $3',
+            ["0", true, record.id]
+        );
 
-        const user = await prisma.user.findFirst({ where: { email } })
+        const userResult = await query('SELECT * FROM "User" WHERE email = $1 LIMIT 1', [email]);
+        const user = userResult.rows[0];
+
         if (!user) {
             return res.status(400).send({ message: "User does not exist" });
         }
@@ -119,10 +119,10 @@ export const verifyOTP = async (req: Request, res: Response) => {
             }
         });
     } catch (err) {
+        console.error("verifyOTP error:", err);
         res.status(500).send({ message: "Something went wrong" });
     }
 }
-
 
 export const logout = async (req: Request, res: Response) => {
     try {
@@ -133,8 +133,6 @@ export const logout = async (req: Request, res: Response) => {
     }
 }
 
-
-
 export const getUser = async (req: Request, res: Response) => {
     try {
         const { page = 1, take = 10, keyword = '' } = req.query;
@@ -142,21 +140,25 @@ export const getUser = async (req: Request, res: Response) => {
         const takeNum = Number(take);
         const skip = (pageNum - 1) * takeNum;
 
-        const where: any = keyword ? {
-            OR: [
-                { name: { contains: keyword as string } },
-                { email: { contains: keyword as string } },
-                { role: { contains: keyword as string } }
-            ]
-        } : {};
+        let sql = 'SELECT * FROM "User"';
+        let countSql = 'SELECT COUNT(*) FROM "User"';
+        const params: any[] = [];
 
-        const count = await prisma.user.count({ where });
-        const data = await prisma.user.findMany({
-            where,
-            skip: skip,
-            take: takeNum,
-            orderBy: { id: 'desc' }
-        });
+        if (keyword) {
+            const searchPattern = `%${keyword}%`;
+            sql += ' WHERE name ILIKE $1 OR email ILIKE $1 OR role ILIKE $1';
+            countSql += ' WHERE name ILIKE $1 OR email ILIKE $1 OR role ILIKE $1';
+            params.push(searchPattern);
+        }
+
+        const countResult = await query(countSql, params);
+        const count = parseInt(countResult.rows[0].count);
+
+        sql += ` ORDER BY id DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+        params.push(takeNum, skip);
+
+        const userResult = await query(sql, params);
+        const data = userResult.rows;
 
         if (!data) {
             return res.status(404).send({ message: "Users not found" });
@@ -186,7 +188,6 @@ export const getUser = async (req: Request, res: Response) => {
     }
 }
 
-
 export const RecoverEmail = async (req: Request, res: Response) => {
     try {
         const { email } = req.body;
@@ -194,17 +195,16 @@ export const RecoverEmail = async (req: Request, res: Response) => {
             return Math.floor(100000 + Math.random() * 900000).toString()
         }
 
-        const data = await prisma.user.findUnique({ where: { email: email } });
-        if (data) {
+        const userResult = await query('SELECT * FROM "User" WHERE email = $1 LIMIT 1', [email]);
+        const user = userResult.rows[0];
+
+        if (user) {
             const createOTP = generateOTP()
 
-            await prisma.otp.create({
-                data: {
-                    email,
-                    otp: createOTP,
-                    status: false
-                }
-            })
+            await query(
+                'INSERT INTO "Otp" (email, otp, status, "updatedAt") VALUES ($1, $2, $3, NOW())',
+                [email, createOTP, false]
+            );
 
             try {
                 await EmailSend(email, `Your OTP is ${createOTP}`, "Password Recovery OTP")
@@ -223,65 +223,52 @@ export const RecoverEmail = async (req: Request, res: Response) => {
     }
 }
 
-
 export const RecoverOtp = async (req: Request, res: Response) => {
     try {
         const email = req.params.email;
         const { otp } = req.body;
 
-        const otpRecord = await prisma.otp.findFirst({
-            where: {
-                email,
-                otp
-            }
-        });
+        const otpResult = await query(
+            'SELECT * FROM "Otp" WHERE email = $1 AND otp = $2 LIMIT 1',
+            [email, otp]
+        );
+        const otpRecord = otpResult.rows[0];
+
         if (!otpRecord) {
             return res.status(400).send({ message: "Invalid or expired OTP" });
         }
-        // await prisma.otp.update({
-        //     where:{id:otpRecord.id},
-        //     data:{
-        //         otp:"0",
-        //         status:true
-        //     }
-        // })
         res.status(200).json({ message: "OTP verified successfully" });
     } catch (err) {
         res.status(500).send({ message: "Something went wrong" });
     }
 }
 
-
 export const RecoverPassword = async (req: Request, res: Response) => {
     try {
         const { email, otp } = req.params;
         const { password } = req.body;
 
-        const otpRecord = await prisma.otp.findFirst({
-            where: {
-                email,
-                otp
-            }
-        });
+        const otpResult = await query(
+            'SELECT * FROM "Otp" WHERE email = $1 AND otp = $2 LIMIT 1',
+            [email, otp]
+        );
+        const otpRecord = otpResult.rows[0];
 
         if (!otpRecord) {
             return res.status(400).send({ message: "Invalid or expired OTP" });
         }
 
-
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        await query(
+            'UPDATE "User" SET password = $1, "updatedAt" = NOW() WHERE email = $2',
+            [hashedPassword, email]
+        );
 
-        await prisma.user.update({
-            where: { email },
-            data: { password: hashedPassword }
-        });
-
-
-        await prisma.otp.update({
-            where: { id: otpRecord.id },
-            data: { status: true, otp: "0" }
-        });
+        await query(
+            'UPDATE "Otp" SET status = $1, otp = $2, "updatedAt" = NOW() WHERE id = $3',
+            [true, "0", otpRecord.id]
+        );
 
         res.status(200).send({ message: "Password updated successfully" });
     } catch (err) {
@@ -297,21 +284,24 @@ export const createStaff = async (req: Request, res: Response) => {
         if (!['Cashier', 'Waiter', 'KitchenStaff', 'Admin'].includes(role)) {
             return res.status(400).json({ message: "Invalid role specified" });
         }
-        const existingUser = await prisma.user.findUnique({ where: { email } });
-        if (existingUser) {
+
+        const existingUserResult = await query('SELECT * FROM "User" WHERE email = $1 LIMIT 1', [email]);
+        if (existingUserResult.rows.length > 0) {
             return res.status(400).json({ message: "User already exists" });
         }
+
         const hashPassword = await bcrypt.hash(password, 10);
-        const newUser = await prisma.user.create({
-            data: { 
-                name, 
-                email, 
-                password: hashPassword, 
-                role: role as any,
-                salary: salary ? Number(salary) : null
-            }
+
+        const newUserResult = await query(
+            'INSERT INTO "User" (name, email, password, role, salary, "updatedAt") VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING *',
+            [name, email, hashPassword, role, salary ? Number(salary) : null]
+        );
+        const newUser = newUserResult.rows[0];
+
+        res.status(201).json({
+            message: "Staff created successfully",
+            user: { id: newUser.id, name: newUser.name, role: newUser.role }
         });
-        res.status(201).json({ message: "Staff created successfully", user: { id: newUser.id, name: newUser.name, role: newUser.role } });
     } catch (err) {
         console.error("Create Staff Error:", err);
         res.status(500).json({ message: "Failed to create staff" });
@@ -322,20 +312,25 @@ export const updateStaff = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
         const { name, role, password, salary } = req.body;
-        const updateData: any = { 
-            name, 
-            role,
-            salary: salary !== undefined ? Number(salary) : undefined
-        };
+
+        let sql = 'UPDATE "User" SET name = $1, role = $2, salary = $3, "updatedAt" = NOW()';
+        const params: any[] = [name, role, salary !== undefined ? Number(salary) : null];
+
         if (password) {
-            updateData.password = await bcrypt.hash(password, 10);
+            const hashedPassword = await bcrypt.hash(password, 10);
+            sql += ', password = $4';
+            params.push(hashedPassword);
         }
-        const updatedUser = await prisma.user.update({
-            where: { id: Number(id) },
-            data: updateData
-        });
+
+        sql += ` WHERE id = $${params.length + 1} RETURNING *`;
+        params.push(Number(id));
+
+        const updatedUserResult = await query(sql, params);
+        const updatedUser = updatedUserResult.rows[0];
+
         res.status(200).json({ message: "Staff updated", user: updatedUser });
     } catch (err) {
+        console.error("updateStaff error:", err);
         res.status(500).json({ message: "Failed to update staff" });
     }
 };
@@ -343,7 +338,7 @@ export const updateStaff = async (req: Request, res: Response) => {
 export const deleteStaff = async (req: Request, res: Response) => {
     try {
         const { id } = req.params;
-        await prisma.user.delete({ where: { id: Number(id) } });
+        await query('DELETE FROM "User" WHERE id = $1', [Number(id)]);
         res.status(200).json({ message: "Staff deleted" });
     } catch (err) {
         res.status(500).json({ message: "Failed to delete staff" });
