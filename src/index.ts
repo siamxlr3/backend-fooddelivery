@@ -30,7 +30,7 @@ const app = express();
 const httpServer = createServer(app);
 
 const allowedOrigins = [
-    "https://frontend-fooddelivery.vercel.app",
+    "https://frontend-fooddelivery-git-main-siams-projects-4ba50b95.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
@@ -57,7 +57,7 @@ app.options("(.*)", (req, res) => {
     if (origin && allowedOrigins.includes(origin)) {
         res.header("Access-Control-Allow-Origin", origin);
     } else {
-        res.header("Access-Control-Allow-Origin", "https://frontend-fooddelivery.vercel.app");
+        res.header("Access-Control-Allow-Origin", "https://frontend-fooddelivery-git-main-siams-projects-4ba50b95.vercel.app");
     }
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
