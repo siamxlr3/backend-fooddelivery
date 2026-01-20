@@ -4,7 +4,6 @@ dotenv.config();
 
 const { Pool } = pg;
 
-// Use the same environment variable Prisma uses
 const connectionString = process.env.DATABASE_URL;
 
 console.log("Database connection attempt...");

@@ -1,43 +1,43 @@
 {
-    "name": "backend",
-    "version": "1.0.0",
-    "main": "dist/index.js",
-    "type": "module",
-    "scripts": {
-        "dev": "nodemon --watch src --ext ts,json --exec node --loader ts-node/esm src/index.ts",
-        "build": "tsc",
-        "start": "node dist/index.js"
-    },
-    "dependencies": {
-        "@types/pg": "^8.16.0",
-        "bcrypt": "^6.0.0",
-        "cloudinary": "^2.8.0",
-        "cookie-parser": "^1.4.7",
-        "cors": "^2.8.5",
-        "dotenv": "^17.2.3",
-        "express": "^4.22.1",
-        "jsonwebtoken": "^9.0.2",
-        "multer": "^2.0.2",
-        "nodemailer": "^7.0.10",
-        "pg": "^8.17.2",
-        "redis": "^5.9.0",
-        "socket.io": "^4.8.3",
-        "stripe": "^19.2.0"
-    },
-    "devDependencies": {
-        "@types/bcrypt": "^6.0.0",
-        "@types/cookie-parser": "^1.4.10",
-        "@types/cors": "^2.8.19",
-        "@types/express": "^5.0.5",
-        "@types/jsonwebtoken": "^9.0.10",
-        "@types/multer": "^2.0.0",
-        "@types/node": "^24.10.0",
-        "@types/nodemailer": "^7.0.3",
-        "@types/redis": "^4.0.10",
-        "@types/socket.io": "^3.0.1",
-        "@types/stripe": "^8.0.416",
-        "nodemon": "^3.1.10",
-        "ts-node": "^10.9.2",
-        "typescript": "^5.9.3"
-    }
+    "name":  "backend",
+    "version":  "1.0.0",
+    "main":  "dist/index.js",
+    "type":  "module",
+    "scripts":  {
+                    "dev":  "nodemon --watch src --ext ts,json --exec node --loader ts-node/esm src/index.ts",
+                    "build":  "tsc",
+                    "start":  "node dist/index.js"
+                },
+    "dependencies":  {
+                         "@types/pg":  "^8.16.0",
+                         "bcrypt":  "^6.0.0",
+                         "cloudinary":  "^2.8.0",
+                         "cookie-parser":  "^1.4.7",
+                         "cors":  "^2.8.5",
+                         "dotenv":  "^17.2.3",
+                         "express":  "^4.22.1",
+                         "jsonwebtoken":  "^9.0.2",
+                         "multer":  "^2.0.2",
+                         "nodemailer":  "^7.0.10",
+                         "pg":  "^8.17.2",
+                         "redis":  "^5.9.0",
+                         "socket.io":  "^4.8.3",
+                         "stripe":  "^19.2.0"
+                     },
+    "devDependencies":  {
+                            "@types/bcrypt":  "^6.0.0",
+                            "@types/cookie-parser":  "^1.4.10",
+                            "@types/cors":  "^2.8.19",
+                            "@types/express":  "^5.0.5",
+                            "@types/jsonwebtoken":  "^9.0.10",
+                            "@types/multer":  "^2.0.0",
+                            "@types/node":  "^24.10.0",
+                            "@types/nodemailer":  "^7.0.3",
+                            "@types/redis":  "^4.0.10",
+                            "@types/socket.io":  "^3.0.1",
+                            "@types/stripe":  "^8.0.416",
+                            "nodemon":  "^3.1.10",
+                            "ts-node":  "^10.9.2",
+                            "typescript":  "^5.9.3"
+                        }
 }
