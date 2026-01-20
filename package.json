@@ -1,7 +1,7 @@
 {
     "name": "backend",
     "version": "1.0.0",
-    "main": "index.js",
+    "main": "dist/index.js",
     "type": "module",
     "scripts": {
         "dev": "nodemon --watch src --ext ts,json --exec node --loader ts-node/esm src/index.ts",
